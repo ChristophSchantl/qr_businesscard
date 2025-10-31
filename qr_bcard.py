@@ -6,6 +6,7 @@ import qrcode
 from PIL import Image
 import streamlit as st
 from datetime import datetime
+import textwrap
 
 # ============================================================================
 # Funktionen
@@ -20,10 +21,6 @@ def build_vcard(
     location: str,
     website: str,
 ) -> str:
-    """
-    Baut eine vCard (VCF 3.0). Nur Felder die nicht leer sind werden gesetzt.
-    Mobile OS können diese .vcf direkt in Kontakte importieren.
-    """
     lines = ["BEGIN:VCARD", "VERSION:3.0"]
 
     if full_name:
@@ -38,8 +35,6 @@ def build_vcard(
     if email:
         lines.append(f"EMAIL;TYPE=WORK:{email}")
     if location:
-        # vCard ADR Format: ADR;TYPE=WORK:;;Street;City;Region;Zip;Country
-        # Wir schreiben alles als ein Block in Street Position für Einfachheit.
         lines.append(f"ADR;TYPE=WORK:;;{location};;;;")
     if website:
         lines.append(f"URL:{website}")
@@ -49,9 +44,6 @@ def build_vcard(
 
 
 def make_qr_image(data: str, box_size: int = 8) -> Image.Image:
-    """
-    Baut einen QR Code als PIL Image.
-    """
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -65,9 +57,6 @@ def make_qr_image(data: str, box_size: int = 8) -> Image.Image:
 
 
 def img_to_png_bytes(img: Image.Image) -> bytes:
-    """
-    PIL Image -> PNG Bytes.
-    """
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
@@ -93,7 +82,7 @@ def style_css():
                 box-shadow:0 30px 80px rgba(0,0,0,.6);
                 border:1px solid rgba(255,255,255,.07);
                 color:#f8fafc;
-                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Inter", Roboto, "Helvetica Neue", sans-serif;
+                font-family:-apple-system,BlinkMacSystemFont,"Inter",Roboto,"Helvetica Neue",sans-serif;
             }
             .name {
                 color:#f8fafc;
@@ -102,7 +91,7 @@ def style_css():
                 line-height:1.2;
                 margin:0;
             }
-            .title {
+            .title-line {
                 color:#16a34a;
                 font-size:.9rem;
                 font-weight:500;
@@ -140,29 +129,15 @@ def style_css():
                 border-bottom:1px solid rgba(255,255,255,.07);
                 margin:1rem 0 1rem 0;
             }
-            .qr-label {
-                color:#cbd5e1;
-                font-size:.7rem;
-                font-weight:500;
-                margin-top:.5rem;
-                text-align:center;
-            }
             .footer-note {
                 color:#cbd5e1;
                 font-size:.7rem;
                 line-height:1.4;
                 margin-top:1rem;
-                text-align:center;
-            }
-            .dl-row {
-                display:flex;
-                flex-wrap:wrap;
-                gap:.6rem;
-                margin-top:1rem;
             }
             .download-hint {
                 font-size:.7rem;
-                color:#cbd5e1;
+                color:#6b7280;
                 line-height:1.4;
                 margin-top:.5rem;
             }
@@ -177,14 +152,6 @@ def style_css():
         """,
         unsafe_allow_html=True,
     )
-
-
-def b64_png_inline(data_bytes: bytes) -> str:
-    """
-    Base64 für inline <img> Fallback. Brauchen wir hier nicht zwingend,
-    aber nützlich wenn man HTML-only Preview will.
-    """
-    return base64.b64encode(data_bytes).decode("ascii")
 
 
 # ============================================================================
@@ -222,13 +189,12 @@ with st.sidebar:
         "QR Inhalt",
         ["vCard (Kontakt speichern)", "Website/Link"],
         index=0,
-        help="vCard erzeugt direkten Kontakt Import im Handy. Website zeigt nur deine URL.",
+        help="vCard erzeugt direkten Kontakt Import im Handy. Website nur Link.",
     )
 
     st.markdown("---")
     st.caption("Optional Branding Farben (HEX)")
-    color_bg = st.text_input("Background HEX", value="#0f172a")
-    color_card = st.text_input("Card HEX", value="#1e293b")
+    color_card = st.text_input("Card Background HEX", value="#1e293b")
     color_accent = st.text_input("Accent HEX", value="#16a34a")
 
 # ============================================================================
@@ -246,12 +212,11 @@ vcard_str = build_vcard(
 )
 
 if qr_mode == "vCard (Kontakt speichern)":
-    qr_data_payload = vcard_str
+    qr_payload = vcard_str
 else:
-    # Fallback: wenn Website leer ist, dann LinkedIn. Wenn beides leer ist, dann leerer String.
-    qr_data_payload = website.strip() or linkedin.strip() or " "
+    qr_payload = website.strip() or linkedin.strip() or " "
 
-qr_img = make_qr_image(qr_data_payload, box_size=8)
+qr_img = make_qr_image(qr_payload, box_size=8)
 qr_png_bytes = img_to_png_bytes(qr_img)
 
 vcard_bytes = vcard_str.encode("utf-8")
@@ -267,61 +232,66 @@ qr_filename = f"qr_{timestamp_str}.png"
 left_col, right_col = st.columns([2, 1], gap="large")
 
 with left_col:
-    st.markdown(
-        f"""
-        <div class="card" style="background:{color_card}; border:1px solid rgba(255,255,255,.07);">
-            <div class="rowflex">
-                <div class="leftcol" style="flex:1 1 250px;">
-                    <p class="name" style="color:#f8fafc;">{full_name}</p>
-                    <p class="title" style="color:{color_accent};">{title}<br>{company}</p>
+    # baue HTML ohne führende Leerzeichen
+    card_html = f"""
+<div class="card" style="background:{color_card}; border:1px solid rgba(255,255,255,.07);">
+  <div class="rowflex">
 
-                    <div class="block">
-                        <div class="label">Phone</div>
-                        <div class="val">{phone}</div>
-                    </div>
+    <div class="leftcol" style="flex:1 1 250px;">
+      <p class="name" style="color:#f8fafc;">{full_name}</p>
+      <p class="title-line" style="color:{color_accent};">{title}<br>{company}</p>
 
-                    <div class="block">
-                        <div class="label">Email</div>
-                        <div class="val">{email}</div>
-                    </div>
+      <div class="block">
+        <div class="label">Phone</div>
+        <div class="val">{phone}</div>
+      </div>
 
-                    <div class="block">
-                        <div class="label">Location</div>
-                        <div class="val">{location}</div>
-                    </div>
+      <div class="block">
+        <div class="label">Email</div>
+        <div class="val">{email}</div>
+      </div>
 
-                    <div class="block">
-                        <div class="label">Web</div>
-                        <div class="val"><a class="card-link" href="{website}" target="_blank" rel="noopener noreferrer">{website}</a></div>
-                    </div>
+      <div class="block">
+        <div class="label">Location</div>
+        <div class="val">{location}</div>
+      </div>
 
-                    <div class="block">
-                        <div class="label">LinkedIn</div>
-                        <div class="val"><a class="card-link" href="{linkedin}" target="_blank" rel="noopener noreferrer">{linkedin}</a></div>
-                    </div>
+      <div class="block">
+        <div class="label">Web</div>
+        <div class="val"><a class="card-link" href="{website}" target="_blank" rel="noopener noreferrer">{website}</a></div>
+      </div>
 
-                    <div class="divider"></div>
+      <div class="block">
+        <div class="label">LinkedIn</div>
+        <div class="val"><a class="card-link" href="{linkedin}" target="_blank" rel="noopener noreferrer">{linkedin}</a></div>
+      </div>
 
-                    <div class="footer-note">
-                        Digitale Visitenkarte<br>
-                        QR scannen oder .vcf importieren
-                    </div>
-                </div>
+      <div class="divider"></div>
 
-                <div class="rightcol" style="flex:0 0 200px;text-align:center;">
-                    <div class="label" style="text-align:center;">QR Code</div>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+      <div class="footer-note">
+        Digitale Visitenkarte<br>
+        QR scannen oder .vcf importieren
+      </div>
+    </div>
 
-    # QR Bild unter Karte rendern damit Streamlit nicht versucht, HTML <img> inline zu brechen
-    st.image(qr_png_bytes, caption="Scan", use_column_width=False)
+    <div class="rightcol" style="flex:0 0 200px;text-align:center;">
+      <div class="label" style="text-align:center;">QR Code (Preview)</div>
+    </div>
+
+  </div>
+</div>
+"""
+    # dedent entfernt führende Spaces aus jeder Zeile
+    card_html = textwrap.dedent(card_html)
+
+    st.markdown(card_html, unsafe_allow_html=True)
+
+    # QR separat rendern
+    st.image(qr_png_bytes, caption="Scan mich", use_column_width=False)
 
 with right_col:
     st.subheader("Export")
+
     st.write("1. Kontakt (.vcf) speichern")
     st.download_button(
         label="Download Kontakt (.vcf)",
@@ -349,5 +319,3 @@ with right_col:
         """,
         unsafe_allow_html=True,
     )
-
-# Ende
