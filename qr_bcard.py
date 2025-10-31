@@ -1,15 +1,15 @@
 # app.py
 from __future__ import annotations
 import io
-import base64
 import qrcode
+import base64
 from PIL import Image
 import streamlit as st
+from streamlit import components
 from datetime import datetime
-import textwrap
 
 # ============================================================================
-# Funktionen
+# Helfer
 # ============================================================================
 
 def build_vcard(
@@ -35,6 +35,7 @@ def build_vcard(
     if email:
         lines.append(f"EMAIL;TYPE=WORK:{email}")
     if location:
+        # ADR;TYPE=WORK:;;Street;City;Region;Zip;Country
         lines.append(f"ADR;TYPE=WORK:;;{location};;;;")
     if website:
         lines.append(f"URL:{website}")
@@ -63,7 +64,12 @@ def img_to_png_bytes(img: Image.Image) -> bytes:
     return buf.read()
 
 
-def style_css():
+def bytes_to_data_url_png(b: bytes) -> str:
+    b64 = base64.b64encode(b).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
+def inject_base_css():
     st.markdown(
         """
         <style>
@@ -75,78 +81,11 @@ def style_css():
                 padding-bottom:2rem;
                 max-width:900px;
             }
-            .card {
-                background:#1e293b;
-                border-radius:1rem;
-                padding:1.5rem;
-                box-shadow:0 30px 80px rgba(0,0,0,.6);
-                border:1px solid rgba(255,255,255,.07);
-                color:#f8fafc;
-                font-family:-apple-system,BlinkMacSystemFont,"Inter",Roboto,"Helvetica Neue",sans-serif;
-            }
-            .name {
-                color:#f8fafc;
-                font-size:1.4rem;
-                font-weight:700;
-                line-height:1.2;
-                margin:0;
-            }
-            .title-line {
-                color:#16a34a;
-                font-size:.9rem;
-                font-weight:500;
-                margin:.15rem 0 .6rem 0;
-            }
-            .rowflex {
-                display:flex;
-                flex-wrap:wrap;
-                gap:1.5rem;
-            }
-            .leftcol {
-                flex:1 1 250px;
-            }
-            .rightcol {
-                flex:0 0 200px;
-                text-align:center;
-            }
-            .label {
-                color:#cbd5e1;
-                font-size:.7rem;
-                text-transform:uppercase;
-                letter-spacing:.05em;
-                font-weight:500;
-                margin-bottom:.2rem;
-            }
-            .val {
-                color:#f8fafc;
-                font-size:.9rem;
-                font-weight:500;
-                line-height:1.3;
-                word-break:break-word;
-            }
-            .block { margin-bottom:.9rem; }
-            .divider {
-                border-bottom:1px solid rgba(255,255,255,.07);
-                margin:1rem 0 1rem 0;
-            }
-            .footer-note {
-                color:#cbd5e1;
-                font-size:.7rem;
-                line-height:1.4;
-                margin-top:1rem;
-            }
             .download-hint {
                 font-size:.7rem;
                 color:#6b7280;
                 line-height:1.4;
                 margin-top:.5rem;
-            }
-            a.card-link {
-                color:#f8fafc;
-                text-decoration:none;
-            }
-            a.card-link:hover {
-                color:#16a34a;
             }
         </style>
         """,
@@ -155,7 +94,7 @@ def style_css():
 
 
 # ============================================================================
-# Streamlit Page Config
+# Page Setup
 # ============================================================================
 
 st.set_page_config(
@@ -165,10 +104,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-style_css()
+inject_base_css()
 
 # ============================================================================
-# Sidebar Eingabe
+# Sidebar Eingabeparameter
 # ============================================================================
 
 with st.sidebar:
@@ -189,18 +128,21 @@ with st.sidebar:
         "QR Inhalt",
         ["vCard (Kontakt speichern)", "Website/Link"],
         index=0,
-        help="vCard erzeugt direkten Kontakt Import im Handy. Website nur Link.",
+        help="vCard erzeugt direkten Kontakt-Import ins Handy. Website nur Link.",
     )
 
     st.markdown("---")
-    st.caption("Optional Branding Farben (HEX)")
+    st.caption("Branding Farben (HEX)")
     color_card = st.text_input("Card Background HEX", value="#1e293b")
     color_accent = st.text_input("Accent HEX", value="#16a34a")
+    color_text_main = "#f8fafc"
+    color_text_sub = "#cbd5e1"
 
 # ============================================================================
-# vCard + QR bauen
+# Daten generieren
 # ============================================================================
 
+# vCard Text
 vcard_str = build_vcard(
     full_name=full_name.strip(),
     title=title.strip(),
@@ -211,83 +153,191 @@ vcard_str = build_vcard(
     website=website.strip(),
 )
 
+# QR Payload
 if qr_mode == "vCard (Kontakt speichern)":
     qr_payload = vcard_str
 else:
     qr_payload = website.strip() or linkedin.strip() or " "
 
+# QR Bild
 qr_img = make_qr_image(qr_payload, box_size=8)
 qr_png_bytes = img_to_png_bytes(qr_img)
+qr_data_url = bytes_to_data_url_png(qr_png_bytes)
 
+# vCard Bytes
 vcard_bytes = vcard_str.encode("utf-8")
 
+# Filenamen
 timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 vcf_filename = f"{full_name.strip().replace(' ', '_')}_{timestamp_str}.vcf"
 qr_filename = f"qr_{timestamp_str}.png"
 
 # ============================================================================
-# Layout Seite
+# HTML Karte bauen (als echtes HTML via components.html)
+# ============================================================================
+
+card_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+.card {{
+  background:{color_card};
+  border-radius:1rem;
+  padding:1.5rem;
+  box-shadow:0 30px 80px rgba(0,0,0,.6);
+  border:1px solid rgba(255,255,255,.07);
+  color:{color_text_main};
+  font-family:-apple-system,BlinkMacSystemFont,"Inter",Roboto,"Helvetica Neue",sans-serif;
+  display:flex;
+  flex-wrap:wrap;
+  gap:1.5rem;
+}}
+.leftcol {{
+  flex:1 1 250px;
+  min-width:250px;
+}}
+.rightcol {{
+  flex:0 0 200px;
+  min-width:200px;
+  text-align:center;
+}}
+.name {{
+  color:{color_text_main};
+  font-size:1.4rem;
+  font-weight:700;
+  line-height:1.2;
+  margin:0;
+}}
+.title-line {{
+  color:{color_accent};
+  font-size:.9rem;
+  font-weight:500;
+  margin:.15rem 0 .6rem 0;
+}}
+.block {{
+  margin-bottom:.9rem;
+}}
+.label {{
+  color:{color_text_sub};
+  font-size:.7rem;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  font-weight:500;
+  margin-bottom:.2rem;
+}}
+.val {{
+  color:{color_text_main};
+  font-size:.9rem;
+  font-weight:500;
+  line-height:1.3;
+  word-break:break-word;
+}}
+.divider {{
+  border-bottom:1px solid rgba(255,255,255,.07);
+  margin:1rem 0 1rem 0;
+}}
+.footer-note {{
+  color:{color_text_sub};
+  font-size:.7rem;
+  line-height:1.4;
+  margin-top:1rem;
+}}
+.qr-label {{
+  color:{color_text_sub};
+  font-size:.7rem;
+  font-weight:500;
+  margin-top:.5rem;
+  text-align:center;
+}}
+a.card-link {{
+  color:{color_text_main};
+  text-decoration:none;
+  word-break:break-all;
+}}
+a.card-link:hover {{
+  color:{color_accent};
+}}
+.qr-box {{
+  background:#fff;
+  border-radius:.5rem;
+  padding:.5rem;
+  line-height:0;
+  border:1px solid rgba(0,0,0,.1);
+  box-shadow:0 20px 40px rgba(0,0,0,.4);
+  display:inline-block;
+}}
+.qr-box img {{
+  display:block;
+  width:160px;
+  height:160px;
+  object-fit:contain;
+}}
+</style>
+</head>
+<body style="margin:0;background:transparent;">
+<div class="card">
+
+  <div class="leftcol">
+    <p class="name">{full_name}</p>
+    <p class="title-line">{title}<br>{company}</p>
+
+    <div class="block">
+      <div class="label">Phone</div>
+      <div class="val">{phone}</div>
+    </div>
+
+    <div class="block">
+      <div class="label">Email</div>
+      <div class="val">{email}</div>
+    </div>
+
+    <div class="block">
+      <div class="label">Location</div>
+      <div class="val">{location}</div>
+    </div>
+
+    <div class="block">
+      <div class="label">Web</div>
+      <div class="val"><a class="card-link" href="{website}" target="_blank" rel="noopener noreferrer">{website}</a></div>
+    </div>
+
+    <div class="block">
+      <div class="label">LinkedIn</div>
+      <div class="val"><a class="card-link" href="{linkedin}" target="_blank" rel="noopener noreferrer">{linkedin}</a></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="footer-note">
+      Digitale Visitenkarte<br>
+      QR scannen oder .vcf importieren
+    </div>
+  </div>
+
+  <div class="rightcol">
+    <div class="label" style="text-align:center;">QR Code</div>
+    <div class="qr-box">
+      <img src="{qr_data_url}" alt="QR Code">
+    </div>
+    <div class="qr-label">{qr_mode}</div>
+  </div>
+
+</div>
+</body>
+</html>
+"""
+
+# ============================================================================
+# Layout in Streamlit
 # ============================================================================
 
 left_col, right_col = st.columns([2, 1], gap="large")
 
 with left_col:
-    # baue HTML ohne führende Leerzeichen
-    card_html = f"""
-<div class="card" style="background:{color_card}; border:1px solid rgba(255,255,255,.07);">
-  <div class="rowflex">
-
-    <div class="leftcol" style="flex:1 1 250px;">
-      <p class="name" style="color:#f8fafc;">{full_name}</p>
-      <p class="title-line" style="color:{color_accent};">{title}<br>{company}</p>
-
-      <div class="block">
-        <div class="label">Phone</div>
-        <div class="val">{phone}</div>
-      </div>
-
-      <div class="block">
-        <div class="label">Email</div>
-        <div class="val">{email}</div>
-      </div>
-
-      <div class="block">
-        <div class="label">Location</div>
-        <div class="val">{location}</div>
-      </div>
-
-      <div class="block">
-        <div class="label">Web</div>
-        <div class="val"><a class="card-link" href="{website}" target="_blank" rel="noopener noreferrer">{website}</a></div>
-      </div>
-
-      <div class="block">
-        <div class="label">LinkedIn</div>
-        <div class="val"><a class="card-link" href="{linkedin}" target="_blank" rel="noopener noreferrer">{linkedin}</a></div>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="footer-note">
-        Digitale Visitenkarte<br>
-        QR scannen oder .vcf importieren
-      </div>
-    </div>
-
-    <div class="rightcol" style="flex:0 0 200px;text-align:center;">
-      <div class="label" style="text-align:center;">QR Code (Preview)</div>
-    </div>
-
-  </div>
-</div>
-"""
-    # dedent entfernt führende Spaces aus jeder Zeile
-    card_html = textwrap.dedent(card_html)
-
-    st.markdown(card_html, unsafe_allow_html=True)
-
-    # QR separat rendern
-    st.image(qr_png_bytes, caption="Scan mich", use_column_width=False)
+    # echtes HTML rendern
+    components.v1.html(card_html, height=360, scrolling=False)
 
 with right_col:
     st.subheader("Export")
@@ -313,8 +363,8 @@ with right_col:
     st.markdown(
         """
         <div class="download-hint">
-        .vcf auf dem Handy öffnen. System fragt ob Kontakt importiert werden soll.<br><br>
-        QR.png kann gedruckt oder verschickt werden.
+        .vcf auf dem Handy öffnen. iOS / Android fragt dann ob neuer Kontakt angelegt werden soll.<br><br>
+        QR.png ist druckfähig / sharefähig.
         </div>
         """,
         unsafe_allow_html=True,
