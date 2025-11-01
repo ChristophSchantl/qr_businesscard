@@ -13,7 +13,8 @@ from datetime import datetime
 # ============================================================================
 
 def build_vcard(
-    full_name: str,
+    first_name: str,
+    last_name: str,
     title: str,
     company: str,
     phone: str,
@@ -21,11 +22,18 @@ def build_vcard(
     location: str,
     website: str,
 ) -> str:
+    """
+    Baut eine vCard 3.0
+    N: Nachname;Vorname;Mittelname;Prefix;Suffix
+    FN: Formatierter Anzeigename
+    """
+    display_name = f"{first_name.strip()} {last_name.strip()}".strip()
+
     lines = ["BEGIN:VCARD", "VERSION:3.0"]
 
-    if full_name:
-        lines.append(f"N:{full_name};;;;")
-        lines.append(f"FN:{full_name}")
+    if first_name or last_name:
+        lines.append(f"N:{last_name.strip()};{first_name.strip()};;;")
+        lines.append(f"FN:{display_name}")
     if company:
         lines.append(f"ORG:{company}")
     if title:
@@ -114,7 +122,9 @@ with st.sidebar:
     st.markdown("## Kontakt Daten")
     st.caption("Felder ausfüllen. QR und Downloads generieren.")
 
-    full_name = st.text_input("Name / Full Name", value="Christoph Schantl")
+    first_name = st.text_input("Vorname / First Name", value="Christoph")
+    last_name = st.text_input("Nachname / Last Name", value="Schantl")
+
     title = st.text_input("Titel / Role", value="Investment Management / Advisory")
     company = st.text_input("Firma / Company", value="SHI Capital")
     phone = st.text_input("Telefon", value="+34 600 000 000")
@@ -138,13 +148,17 @@ with st.sidebar:
     color_text_main = "#f8fafc"
     color_text_sub = "#cbd5e1"
 
+# Anzeigename für Karte / Dateien
+display_name = f"{first_name.strip()} {last_name.strip()}".strip()
+
 # ============================================================================
 # Daten generieren
 # ============================================================================
 
 # vCard Text
 vcard_str = build_vcard(
-    full_name=full_name.strip(),
+    first_name=first_name.strip(),
+    last_name=last_name.strip(),
     title=title.strip(),
     company=company.strip(),
     phone=phone.strip(),
@@ -169,7 +183,14 @@ vcard_bytes = vcard_str.encode("utf-8")
 
 # Filenamen
 timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-vcf_filename = f"{full_name.strip().replace(' ', '_')}_{timestamp_str}.vcf"
+
+# Basisname für Dateien sauber bauen
+base_name_parts = [first_name.strip(), last_name.strip()]
+base_name_clean = "_".join([p for p in base_name_parts if p]).strip("_")
+if not base_name_clean:
+    base_name_clean = "contact"
+
+vcf_filename = f"{base_name_clean}_{timestamp_str}.vcf"
 qr_filename = f"qr_{timestamp_str}.png"
 
 # ============================================================================
@@ -280,7 +301,7 @@ a.card-link:hover {{
 <div class="card">
 
   <div class="leftcol">
-    <p class="name">{full_name}</p>
+    <p class="name">{display_name}</p>
     <p class="title-line">{title}<br>{company}</p>
 
     <div class="block">
@@ -336,7 +357,6 @@ a.card-link:hover {{
 left_col, right_col = st.columns([2, 1], gap="large")
 
 with left_col:
-    # echtes HTML rendern
     components.v1.html(card_html, height=360, scrolling=False)
 
 with right_col:
